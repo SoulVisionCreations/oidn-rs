@@ -64,6 +64,26 @@ pub enum Quality {
     High = sys::OIDNQuality_OIDN_QUALITY_HIGH,
 }
 
+#[repr(u32)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, TryFromPrimitive)]
+pub enum Format {
+    Float = sys::OIDNFormat_OIDN_FORMAT_FLOAT,
+    Float2 = sys::OIDNFormat_OIDN_FORMAT_FLOAT2,
+    Float3 = sys::OIDNFormat_OIDN_FORMAT_FLOAT3,
+    Float4 = sys::OIDNFormat_OIDN_FORMAT_FLOAT4,
+}
+
+impl Format {
+    pub fn as_raw_oidn_format(&self) -> sys::OIDNFormat {
+        match self {
+            Format::Float => sys::OIDNFormat_OIDN_FORMAT_FLOAT,
+            Format::Float2 => sys::OIDNFormat_OIDN_FORMAT_FLOAT2,
+            Format::Float3 => sys::OIDNFormat_OIDN_FORMAT_FLOAT3,
+            Format::Float4 => sys::OIDNFormat_OIDN_FORMAT_FLOAT4,
+        }
+    }
+}
+
 impl Quality {
     pub fn as_raw_oidn_quality(&self) -> sys::OIDNQuality {
         match self {

@@ -1,4 +1,4 @@
-use crate::{device::Device, sys::*, Error, Quality};
+use crate::{device::Device, sys::*, Error, Quality, Format};
 
 /// A generic ray tracing denoising filter for denoising
 /// images produces with Monte Carlo ray tracing methods
@@ -14,6 +14,7 @@ pub struct RayTracing<'a> {
     clean_aux: bool,
     img_dims: (usize, usize, usize),
     filter_quality: OIDNQuality,
+    filter_format: OIDNFormat,
 }
 
 impl<'a> RayTracing<'a> {
@@ -33,6 +34,7 @@ impl<'a> RayTracing<'a> {
             clean_aux: false,
             img_dims: (0, 0, 0),
             filter_quality: 0,
+            filter_format: OIDNFormat_OIDN_FORMAT_FLOAT3,
         }
     }
 
@@ -44,6 +46,12 @@ impl<'a> RayTracing<'a> {
     /// Balanced is recommended for realtime usages.
     pub fn filter_quality(&mut self, quality: Quality) -> &mut RayTracing<'a> {
         self.filter_quality = quality.as_raw_oidn_quality();
+        self
+    }
+
+    /// Sets the format of the input/output, default is FLOAT3
+    pub fn filter_format(&mut self, format: Format) -> &mut RayTracing<'a> {
+        self.filter_format = format.as_raw_oidn_format();
         self
     }
 
@@ -144,7 +152,7 @@ impl<'a> RayTracing<'a> {
     }
 
     pub fn image_dimensions(&mut self, width: usize, height: usize) -> &mut RayTracing<'a> {
-        let buffer_dims = 3 * width * height;
+        let buffer_dims = self.filter_format as usize * width * height;
         match self.albedo {
             None => {}
             Some(buffer) => unsafe {
@@ -177,6 +185,11 @@ impl<'a> RayTracing<'a> {
 
     fn execute_filter(&self, color: Option<&[f32]>, output: &mut [f32]) -> Result<(), Error> {
         let byte_size = self.img_dims.2 * 4;
+        let byte_stride = self.filter_format as usize * 4;
+        let row_stride = self.img_dims.0 * byte_stride;
+        println!("Filter Byte Size: {byte_size}");
+        println!("Filter Pixel stride: {byte_stride}");
+        println!("Filter Row stride: {row_stride}");
         if let Some(alb) = self.albedo {
             if alb.1 != self.img_dims.2 {
                 return Err(Error::InvalidImageDimensions);
@@ -190,8 +203,8 @@ impl<'a> RayTracing<'a> {
                     self.img_dims.0 as _,
                     self.img_dims.1 as _,
                     0,
-                    0,
-                    0,
+                    byte_stride,
+                    row_stride,
                 );
             }
 
@@ -210,8 +223,8 @@ impl<'a> RayTracing<'a> {
                         self.img_dims.0 as _,
                         self.img_dims.1 as _,
                         0,
-                        0,
-                        0,
+                        byte_stride,
+                        row_stride,
                     );
                 }
             }
@@ -241,8 +254,8 @@ impl<'a> RayTracing<'a> {
                 self.img_dims.0 as _,
                 self.img_dims.1 as _,
                 0,
-                0,
-                0,
+                byte_stride,
+                row_stride,
             );
         }
 
@@ -251,6 +264,10 @@ impl<'a> RayTracing<'a> {
         }
         let output_buffer = unsafe { oidnNewBuffer(self.device.0, byte_size) };
         unsafe {
+            // Write the default values of output to buffer. If default values in output buffer are 1,
+            // this preserves the alpha channel if it exists.
+            let out_ptr = output.as_ptr();
+            oidnWriteBuffer(output_buffer, 0, byte_size, out_ptr as *const _);
             oidnSetFilterImage(
                 self.handle,
                 b"output\0" as *const _ as _,
@@ -259,8 +276,8 @@ impl<'a> RayTracing<'a> {
                 self.img_dims.0 as _,
                 self.img_dims.1 as _,
                 0,
-                0,
-                0,
+                byte_stride,
+                row_stride,
             );
             oidnSetFilterBool(self.handle, b"hdr\0" as *const _ as _, self.hdr);
             oidnSetFilterFloat(
